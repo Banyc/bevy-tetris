@@ -17,28 +17,29 @@ enum GameState {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window{
-                title: "tetris".to_string(),
+            primary_window: Some(Window {
+                title: "Tetris".to_string(),
                 resizable: false,
                 resolution: (360., 443.).into(),
                 ..default()
             }),
             ..default()
-          }))
+        }))
         .insert_resource(GameData::default())
         .add_startup_system(setup_screen.in_base_set(StartupSet::PreStartup))
         .add_state::<GameState>()
-        .add_system(newgame_system.in_schedule(OnEnter(GameState::Playing)))
+        .add_system(new_game_system.in_schedule(OnEnter(GameState::Playing)))
         .add_systems(
             (
                 keyboard_system,
-                movebrick_systrem,
-                freezebrick_system,
+                move_brick_system,
+                freeze_brick_system,
                 scoreboard_system,
-            ).in_set(OnUpdate(GameState::Playing))
+            )
+                .in_set(OnUpdate(GameState::Playing)),
         )
-        .add_system(gameover_setup.in_schedule(OnEnter(GameState::GameOver)))
-        .add_system(gameover_system.in_set(OnUpdate(GameState::GameOver)))
+        .add_system(game_over_setup.in_schedule(OnEnter(GameState::GameOver)))
+        .add_system(game_over_system.in_set(OnUpdate(GameState::GameOver)))
         .run();
 }
 
@@ -100,102 +101,123 @@ fn keyboard_system(
     time: Res<Time>,
     mut query: Query<(Entity, &mut Transform), With<BrickBoardBundle>>,
 ) {
-    let ticked = game.keyboard_timer.tick(time.delta()).finished();
-    if let Ok((moving_entity, mut transform)) = query.get_single_mut() {
-        if ticked {
-            if keyboard_input.pressed(KeyCode::Left)
-                && game
-                    .board
-                    .valid_brickshape(&game.moving_brick, &game.moving_orig.left())
-            {
-                game.moving_orig.move_left();
-                transform.translation.x -= consts::DOT_WIDTH_PX;
-            }
+    let Ok((moving_entity, mut transform)) = query.get_single_mut() else {
+        return;
+    };
 
-            if keyboard_input.pressed(KeyCode::Right)
-                && game
-                    .board
-                    .valid_brickshape(&game.moving_brick, &game.moving_orig.right())
-            {
-                game.moving_orig.move_right();
-                transform.translation.x += consts::DOT_WIDTH_PX;
-            }
-
-            if keyboard_input.pressed(KeyCode::Up) {
-                let rotated = game.moving_brick.rotate();
-                if game.board.valid_brickshape(&rotated, &game.moving_orig) {
-                    spawn_brick_board(&mut commands, rotated.into(), game.moving_orig);
-                    game.moving_brick = rotated;
-                    commands.entity(moving_entity).despawn_recursive();
-                }
-            }
-            if keyboard_input.pressed(KeyCode::Space) {
-                while game
-                    .board
-                    .valid_brickshape(&game.moving_brick, &game.moving_orig.down())
-                {
-                    game.moving_orig.move_down();
-                    transform.translation.y -= consts::DOT_WIDTH_PX;
-                }
-            }
+    if keyboard_input.just_pressed(KeyCode::Up) {
+        let rotated = game.moving_brick.rotate();
+        if game.board.valid_brickshape(&rotated, &game.moving_orig) {
+            spawn_brick_board(&mut commands, rotated.into(), game.moving_orig);
+            game.moving_brick = rotated;
+            commands.entity(moving_entity).despawn_recursive();
         }
+    }
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        let mut valid = false;
+        while game
+            .board
+            .valid_brickshape(&game.moving_brick, &game.moving_orig.down())
+        {
+            game.moving_orig.move_down();
+            transform.translation.y -= consts::DOT_WIDTH_PX;
+            valid = true;
+        }
+        if valid {
+            // Trigger the falling timer immediately to spawn a new brick right away
+            let elapse = game.falling_timer.duration() - Duration::from_nanos(1);
+            game.falling_timer.set_elapsed(elapse);
+        }
+    }
+
+    let just_pressed = keyboard_input.any_just_pressed(vec![KeyCode::Left, KeyCode::Right]);
+    if just_pressed {
+        game.keyboard_timer.reset();
+    }
+    let ticked = game.keyboard_timer.tick(time.delta()).finished();
+    if !ticked && !just_pressed {
+        return;
+    }
+
+    if keyboard_input.pressed(KeyCode::Left)
+        && game
+            .board
+            .valid_brickshape(&game.moving_brick, &game.moving_orig.left())
+    {
+        game.moving_orig.move_left();
+        transform.translation.x -= consts::DOT_WIDTH_PX;
+    }
+
+    if keyboard_input.pressed(KeyCode::Right)
+        && game
+            .board
+            .valid_brickshape(&game.moving_brick, &game.moving_orig.right())
+    {
+        game.moving_orig.move_right();
+        transform.translation.x += consts::DOT_WIDTH_PX;
     }
 }
 
 /// movebrick_systrem only handle tick-tick falling
 /// dont handle keyboard input
-fn movebrick_systrem(
+fn move_brick_system(
     //commands: Commands,
     mut game: ResMut<GameData>,
     time: Res<Time>,
     mut query: Query<&mut Transform, With<BrickBoardBundle>>,
 ) {
     let ticked = game.falling_timer.tick(time.delta()).finished();
-    if let Ok(mut transform) = query.get_single_mut() {
-        if ticked {
-            if game
-                .board
-                .valid_brickshape(&game.moving_brick, &game.moving_orig.down())
-            {
-                //after ticking, brick falling one line.
-                game.moving_orig.move_down();
-                transform.translation.y -= consts::DOT_WIDTH_PX;
-            } else {
-                //there is no space to falling, so freeze the brick.
-                let frozon_brick = game.moving_brick;
-                let frozon_orig = game.moving_orig;
-                game.board.occupy_brickshape(&frozon_brick, &frozon_orig);
-                game.freeze = true;
-                //if we destory moving brick here.
-                //there is flash, when destory brick ,and re-draw board.
-                //commands.entity(entity).despawn_recursive();
-            }
-        }
+    let Ok(mut transform) = query.get_single_mut() else {
+        return;
+    };
+    if !ticked {
+        return;
+    }
+
+    if game
+        .board
+        .valid_brickshape(&game.moving_brick, &game.moving_orig.down())
+    {
+        //after ticking, brick falling one line.
+        game.moving_orig.move_down();
+        transform.translation.y -= consts::DOT_WIDTH_PX;
+    } else {
+        //there is no space to fall, so freeze the brick.
+        let frozen_brick = game.moving_brick;
+        let frozen_orig = game.moving_orig;
+        game.board.occupy_brickshape(&frozen_brick, &frozen_orig);
+        game.freeze = true;
+        //if we destroy moving brick here.
+        //there is flash, when destroy brick ,and re-draw board.
+        //commands.entity(entity).despawn_recursive();
     }
 }
-fn freezebrick_system(
+fn freeze_brick_system(
     mut commands: Commands,
     mut game: ResMut<GameData>,
     mut brick: Query<Entity, With<BrickBoardBundle>>,
     mut board: Query<Entity, With<BoardBundle>>,
 ) {
-    if game.freeze {
-        //step 1. check: we can clean one line?
-        game.deleted_lines = game.board.clean_lines();
-
-        //destory moving brick
-        if let Ok(entity) = brick.get_single_mut() {
-            commands.entity(entity).despawn_recursive();
-        }
-        //destory board
-        if let Ok(entity) = board.get_single_mut() {
-            commands.entity(entity).despawn_recursive();
-        }
-        //redraw board
-        spawn_board(&mut commands, &game.board);
+    if !game.freeze {
+        return;
     }
+
+    //step 1. check: we can clean one line?
+    game.deleted_lines = game.board.clean_lines();
+
+    //destroy moving brick
+    if let Ok(entity) = brick.get_single_mut() {
+        commands.entity(entity).despawn_recursive();
+    }
+    //destroy board
+    if let Ok(entity) = board.get_single_mut() {
+        commands.entity(entity).despawn_recursive();
+    }
+    //redraw board
+    spawn_board(&mut commands, &game.board);
 }
 
+#[allow(clippy::type_complexity)]
 fn scoreboard_system(
     mut commands: Commands,
     mut state: ResMut<NextState<GameState>>,
@@ -232,52 +254,56 @@ fn scoreboard_system(
     //next moving brick
     //step 1. generate new brick(using next_brick, and rand generate new next_brick)
     //game.freeze = false;
-    if game.freeze {
-        game.freeze = false;
-        game.score += SCORE_PER_DROP;
-        if let Ok(mut text) = query.p0().get_single_mut() {
-            text.sections[0].value = format!("{:06}", game.score);
+    if !game.freeze {
+        return;
+    }
+
+    game.freeze = false;
+    game.score += SCORE_PER_DROP;
+    if let Ok(mut text) = query.p0().get_single_mut() {
+        text.sections[0].value = format!("{:06}", game.score);
+    }
+
+    game.moving_orig = consts::BRICK_START_DOT;
+    game.moving_brick = game.next_brick;
+    game.next_brick = BrickShape::rand();
+
+    if game
+        .board
+        .valid_brickshape(&game.moving_brick, &BRICK_START_DOT)
+    {
+        //step 2.2 destroy next_brick
+        if let Ok(entity) = next_brick.get_single_mut() {
+            commands.entity(entity).despawn_recursive();
         }
 
-        game.moving_orig = consts::BRICK_START_DOT;
-        game.moving_brick = game.next_brick;
-        game.next_brick = BrickShape::rand();
-
-        if game
-            .board
-            .valid_brickshape(&game.moving_brick, &BRICK_START_DOT)
-        {
-            //step 2.2 destory next_brick
-            if let Ok(entity) = next_brick.get_single_mut() {
-                commands.entity(entity).despawn_recursive();
-            }
-
-            //step 3.1 draw new one in start point
-            spawn_brick_board(
-                &mut commands,
-                game.moving_brick.into(),
-                consts::BRICK_START_DOT,
-            );
-            //step 3.3 draw new next_brick
-            spawn_brick_next(&mut commands, game.next_brick.into());
-        } else {
-            //game over!
-            let _ = state.set(GameState::GameOver);
-        }
+        //step 3.1 draw new one in start point
+        spawn_brick_board(
+            &mut commands,
+            game.moving_brick.into(),
+            consts::BRICK_START_DOT,
+        );
+        //step 3.3 draw new next_brick
+        spawn_brick_next(&mut commands, game.next_brick.into());
+        // Reset the timer
+        game.falling_timer.reset();
+    } else {
+        //game over!
+        state.set(GameState::GameOver);
     }
 }
 
-fn gameover_setup(
+fn game_over_setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut board: Query<Entity, With<BoardBundle>>,
     mut next_brick: Query<Entity, With<BrickNextBundle>>,
 ) {
-    //destory board
+    //destroy board
     if let Ok(entity) = board.get_single_mut() {
         commands.entity(entity).despawn_recursive();
     }
-    //destory next brick
+    //destroy next brick
     if let Ok(entity) = next_brick.get_single_mut() {
         commands.entity(entity).despawn_recursive();
     }
@@ -291,24 +317,27 @@ fn gameover_setup(
         ))
         .insert(GameOverText);
 }
-fn gameover_system(
+fn game_over_system(
     mut commands: Commands,
     mut state: ResMut<NextState<GameState>>,
     mut game: ResMut<GameData>,
     mut gameover: Query<Entity, With<GameOverText>>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
-    if keyboard_input.pressed(KeyCode::Space) {
-        game.reset();
-
-        if let Ok(entity) = gameover.get_single_mut() {
-            commands.entity(entity).despawn_recursive();
-        }
-        let _ = state.set(GameState::Playing);
+    if !keyboard_input.pressed(KeyCode::Space) {
+        return;
     }
+
+    game.reset();
+
+    if let Ok(entity) = gameover.get_single_mut() {
+        commands.entity(entity).despawn_recursive();
+    }
+    state.set(GameState::Playing);
 }
 
-fn newgame_system(
+#[allow(clippy::type_complexity)]
+fn new_game_system(
     mut commands: Commands,
     game: ResMut<GameData>,
     mut query: ParamSet<(
@@ -428,8 +457,7 @@ fn init_text(msg: &str, x: f32, y: f32, asset_server: &Res<AssetServer>) -> Text
                 font: asset_server.load("digital7mono.ttf"),
                 font_size: 16.0,
                 color: Color::BLACK,
-            }
-            //Default::default(),
+            }, //Default::default(),
         ),
         style: Style {
             align_self: AlignSelf::FlexEnd,
@@ -444,7 +472,6 @@ fn init_text(msg: &str, x: f32, y: f32, asset_server: &Res<AssetServer>) -> Text
         ..default()
     }
 }
-
 
 #[derive(Resource)]
 pub struct GameData {
