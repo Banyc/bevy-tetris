@@ -4,7 +4,7 @@ mod consts;
 
 use bevy::prelude::*;
 use bevy_utils::Duration;
-use bricks::{Board, Brick, BrickShape, Dot};
+use bricks::{Board, Brick, BrickView, Dot};
 use consts::*;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
@@ -93,7 +93,7 @@ struct LevelText;
 struct GameOverText;
 
 /// keyboard_system only handle keyboard input
-/// dont handle tick-tick falling
+/// won't handle tick-tick falling
 fn keyboard_system(
     mut commands: Commands,
     keyboard_input: Res<Input<KeyCode>>,
@@ -107,8 +107,8 @@ fn keyboard_system(
 
     if keyboard_input.just_pressed(KeyCode::Up) {
         let rotated = game.moving_brick.rotate();
-        if game.board.valid_brickshape(&rotated, &game.moving_orig) {
-            spawn_brick_board(&mut commands, rotated.into(), game.moving_orig);
+        if game.board.valid_brick(&rotated, &game.moving_pos) {
+            spawn_brick_board(&mut commands, rotated.into(), game.moving_pos);
             game.moving_brick = rotated;
             commands.entity(moving_entity).despawn_recursive();
         }
@@ -117,9 +117,9 @@ fn keyboard_system(
         let mut valid = false;
         while game
             .board
-            .valid_brickshape(&game.moving_brick, &game.moving_orig.down())
+            .valid_brick(&game.moving_brick, &game.moving_pos.down())
         {
-            game.moving_orig.move_down();
+            game.moving_pos.move_down();
             transform.translation.y -= consts::DOT_WIDTH_PX;
             valid = true;
         }
@@ -154,24 +154,24 @@ fn keyboard_system(
     if keyboard_input.pressed(KeyCode::Left)
         && game
             .board
-            .valid_brickshape(&game.moving_brick, &game.moving_orig.left())
+            .valid_brick(&game.moving_brick, &game.moving_pos.left())
     {
-        game.moving_orig.move_left();
+        game.moving_pos.move_left();
         transform.translation.x -= consts::DOT_WIDTH_PX;
     }
 
     if keyboard_input.pressed(KeyCode::Right)
         && game
             .board
-            .valid_brickshape(&game.moving_brick, &game.moving_orig.right())
+            .valid_brick(&game.moving_brick, &game.moving_pos.right())
     {
-        game.moving_orig.move_right();
+        game.moving_pos.move_right();
         transform.translation.x += consts::DOT_WIDTH_PX;
     }
 }
 
-/// movebrick_systrem only handle tick-tick falling
-/// dont handle keyboard input
+/// move_brick_system only handle tick-tick falling
+/// won't handle keyboard input
 fn move_brick_system(
     //commands: Commands,
     mut game: ResMut<GameData>,
@@ -188,16 +188,16 @@ fn move_brick_system(
 
     if game
         .board
-        .valid_brickshape(&game.moving_brick, &game.moving_orig.down())
+        .valid_brick(&game.moving_brick, &game.moving_pos.down())
     {
         //after ticking, brick falling one line.
-        game.moving_orig.move_down();
+        game.moving_pos.move_down();
         transform.translation.y -= consts::DOT_WIDTH_PX;
     } else {
         //there is no space to fall, so freeze the brick.
         let frozen_brick = game.moving_brick;
-        let frozen_orig = game.moving_orig;
-        game.board.occupy_brickshape(&frozen_brick, &frozen_orig);
+        let frozen_pos = game.moving_pos;
+        game.board.occupy_brick(&frozen_brick, &frozen_pos);
         game.freeze = true;
         //if we destroy moving brick here.
         //there is flash, when destroy brick ,and re-draw board.
@@ -276,14 +276,11 @@ fn scoreboard_system(
         text.sections[0].value = format!("{:06}", game.score);
     }
 
-    game.moving_orig = consts::BRICK_START_DOT;
+    game.moving_pos = consts::BRICK_START_DOT;
     game.moving_brick = game.next_brick;
-    game.next_brick = BrickShape::rand();
+    game.next_brick = Brick::rand();
 
-    if game
-        .board
-        .valid_brickshape(&game.moving_brick, &BRICK_START_DOT)
-    {
+    if game.board.valid_brick(&game.moving_brick, &BRICK_START_DOT) {
         //step 2.2 destroy next_brick
         if let Ok(entity) = next_brick.get_single_mut() {
             commands.entity(entity).despawn_recursive();
@@ -333,7 +330,7 @@ fn game_over_system(
     mut commands: Commands,
     mut state: ResMut<NextState<GameState>>,
     mut game: ResMut<GameData>,
-    mut gameover: Query<Entity, With<GameOverText>>,
+    mut game_over: Query<Entity, With<GameOverText>>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
     if !keyboard_input.pressed(KeyCode::Space) {
@@ -342,7 +339,7 @@ fn game_over_system(
 
     game.reset();
 
-    if let Ok(entity) = gameover.get_single_mut() {
+    if let Ok(entity) = game_over.get_single_mut() {
         commands.entity(entity).despawn_recursive();
     }
     state.set(GameState::Playing);
@@ -374,7 +371,7 @@ fn new_game_system(
     }
 }
 
-fn spawn_brick_next(commands: &mut Commands, brick: Brick) {
+fn spawn_brick_next(commands: &mut Commands, brick: BrickView) {
     commands
         .spawn(SpriteBundle {
             transform: Transform::from_xyz(
@@ -412,7 +409,7 @@ fn spawn_board(commands: &mut Commands, board: &Board) {
         });
 }
 
-fn spawn_brick_board(commands: &mut Commands, brick: Brick, dot_in_board: Dot) {
+fn spawn_brick_board(commands: &mut Commands, brick: BrickView, dot_in_board: Dot) {
     commands
         .spawn(SpriteBundle {
             //from middle pixel to pixel of (left,bottom)
@@ -488,9 +485,9 @@ fn init_text(msg: &str, x: f32, y: f32, asset_server: &Res<AssetServer>) -> Text
 #[derive(Resource)]
 pub struct GameData {
     board: Board,
-    moving_brick: BrickShape,
-    moving_orig: Dot,
-    next_brick: BrickShape,
+    moving_brick: Brick,
+    moving_pos: Dot,
+    next_brick: Brick,
     freeze: bool,
     deleted_lines: u32,
     score: u32,
@@ -516,9 +513,9 @@ impl Default for GameData {
     fn default() -> Self {
         Self {
             board: Board::default(),
-            moving_brick: BrickShape::rand(),
-            moving_orig: consts::BRICK_START_DOT,
-            next_brick: BrickShape::rand(),
+            moving_brick: Brick::rand(),
+            moving_pos: consts::BRICK_START_DOT,
+            next_brick: Brick::rand(),
             freeze: false,
             keyboard_timer: Timer::from_seconds(consts::TIMER_KEY_SECS, TimerMode::Repeating),
             falling_timer: Timer::from_seconds(consts::TIMER_FALLING_SECS, TimerMode::Repeating),
@@ -535,17 +532,17 @@ fn dot_to_vec2(dot: &Dot) -> Vec2 {
     Vec2::new(DOT_WIDTH_PX * dot.0 as f32, DOT_WIDTH_PX * dot.1 as f32)
 }
 
-///tetris speeding  
-///delay = 725 * .85 ^ level + level (ms)
-///use formula from dwhacks, http://gist.github.com/dwhacks/8644250
+/// delay = 725 * .85 ^ level + level (ms)
+///
+/// use formula from dwhacks, http://gist.github.com/dwhacks/8644250
 #[inline]
 pub fn get_speed(level: u32) -> f32 {
     consts::TIMER_FALLING_SECS * (0.85_f32).powi(level as i32) + level as f32 / 1000.0
 }
 
-///tetris scoring  
-///use as [Original Nintendo Scoring System]
-///https://tetris.fandom.com/wiki/Scoring
+/// use as [Original Nintendo Scoring System]
+///
+/// https://tetris.fandom.com/wiki/Scoring
 #[inline]
 pub fn get_score(level: u32, erase_lines: u32) -> u32 {
     assert!(0 < erase_lines);
@@ -553,8 +550,7 @@ pub fn get_score(level: u32, erase_lines: u32) -> u32 {
     vec![40, 100, 300, 1200][(erase_lines - 1) as usize] * (level + 1)
 }
 
-///level  
-///increase level every 10 lines.
+/// increase level every 10 lines.
 #[inline]
 pub fn get_level(total_lines: u32) -> u32 {
     (total_lines / 10).min(99)

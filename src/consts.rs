@@ -1,9 +1,8 @@
-
-use crate::bricks::{Brick, Dot};
-use crate::{Color};
+use crate::bricks::{BrickView, Dot};
+use crate::Color;
 use lazy_static::*;
 
-pub(crate) const BACKGROUND: Color = Color::rgb(158.0/255.0, 173.0/255.0, 135.0/255.0);
+pub(crate) const BACKGROUND: Color = Color::rgb(158.0 / 255.0, 173.0 / 255.0, 135.0 / 255.0);
 pub(crate) const WINDOWS_WIDTH: f32 = 360.0;
 pub(crate) const WINDOWS_HEIGHT: f32 = 443.0;
 
@@ -23,7 +22,7 @@ pub(crate) const BOARD_X: i8 = 10;
 pub(crate) const BOARD_Y: i8 = 23; // board is 10x20
 pub(crate) const BOARD_X_Y: usize = 230; // we create 230 for more space for rotate brick.
 
-pub(crate) const BOARD_Y_VALIDE: i8 = 20; // checking for game over
+pub(crate) const BOARD_Y_VALID: i8 = 20; // checking for game over
 
 pub(crate) const BOARD_LEFT_PX: f32 = 13.0;
 pub(crate) const BOARD_BOTTOM_PX: f32 = 13.0;
@@ -47,44 +46,44 @@ pub(crate) const TIMER_FALLING_SECS: f32 = 0.725;
 pub(crate) const TIMER_KEY_SECS: f32 = 0.100;
 
 lazy_static! {
-    pub static ref BRICKS_DICT: Vec<Vec<Brick>> = vec![
+    pub static ref BRICK_VIEWS: Vec<Vec<BrickView>> = vec![
         //O:
-        vec![Brick{dots:[Dot(1, 1), Dot(1, 2), Dot(2, 1), Dot(2, 2)]}],
+        vec![BrickView{dots:[Dot(1, 1), Dot(1, 2), Dot(2, 1), Dot(2, 2)]}],
         //I:
         vec![
-            Brick{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(3, 1)]},
-            Brick{dots:[Dot(2, 0), Dot(2, 1), Dot(2, 2), Dot(2, 3)]}
+            BrickView{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(3, 1)]},
+            BrickView{dots:[Dot(2, 0), Dot(2, 1), Dot(2, 2), Dot(2, 3)]}
         ],
         //J:
         vec![
-            Brick{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(2, 0)]},
-            Brick{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(0, 0)]},
-            Brick{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(0, 2)]},
-            Brick{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(2, 2)]},
+            BrickView{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(2, 0)]},
+            BrickView{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(0, 0)]},
+            BrickView{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(0, 2)]},
+            BrickView{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(2, 2)]},
         ],
         //L:
         vec![
-            Brick{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(0, 0)]},
-            Brick{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(0, 2)]},
-            Brick{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(2, 2)]},
-            Brick{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(2, 0)]},
+            BrickView{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(0, 0)]},
+            BrickView{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(0, 2)]},
+            BrickView{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(2, 2)]},
+            BrickView{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(2, 0)]},
         ],
         //S:
         vec![
-            Brick{dots:[Dot(0, 0), Dot(1, 0), Dot(1, 1), Dot(2, 1)]},
-            Brick{dots:[Dot(1, 2), Dot(1, 1), Dot(2, 1), Dot(2, 0)]},
+            BrickView{dots:[Dot(0, 0), Dot(1, 0), Dot(1, 1), Dot(2, 1)]},
+            BrickView{dots:[Dot(1, 2), Dot(1, 1), Dot(2, 1), Dot(2, 0)]},
         ],
         //Z:
         vec![
-            Brick{dots:[Dot(0, 1), Dot(1, 1), Dot(1, 0), Dot(2, 0)]},
-            Brick{dots:[Dot(2, 2), Dot(2, 1), Dot(1, 1), Dot(1, 0)]},
+            BrickView{dots:[Dot(0, 1), Dot(1, 1), Dot(1, 0), Dot(2, 0)]},
+            BrickView{dots:[Dot(2, 2), Dot(2, 1), Dot(1, 1), Dot(1, 0)]},
         ],
         //T:
         vec![
-            Brick{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(1, 0)]},
-            Brick{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(0, 1)]},
-            Brick{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(1, 2)]},
-            Brick{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(2, 1)]},
+            BrickView{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(1, 0)]},
+            BrickView{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(0, 1)]},
+            BrickView{dots:[Dot(0, 1), Dot(1, 1), Dot(2, 1), Dot(1, 2)]},
+            BrickView{dots:[Dot(1, 0), Dot(1, 1), Dot(1, 2), Dot(2, 1)]},
         ],
     ];
 }

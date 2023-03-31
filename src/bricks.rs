@@ -1,12 +1,12 @@
-use crate::consts::{BOARD_X, BOARD_X_Y, BOARD_Y, BOARD_Y_VALIDE, BRICKS_DICT, BRICKS_TYPES};
+use crate::consts::{BOARD_X, BOARD_X_Y, BOARD_Y, BOARD_Y_VALID, BRICKS_TYPES, BRICK_VIEWS};
 use bevy::prelude::Resource;
 use rand::prelude::*;
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Dot(pub i8, pub i8);
 
 impl Dot {
-    pub fn with_orignal_dot(&self, orig: &Dot) -> Self {
-        Self(self.0 + orig.0, self.1 + orig.1)
+    pub fn with_original_dot(&self, pos: &Dot) -> Self {
+        Self(self.0 + pos.0, self.1 + pos.1)
     }
     pub fn move_left(&mut self) {
         self.0 -= 1;
@@ -29,26 +29,32 @@ impl Dot {
 }
 
 #[derive(Copy, Clone)]
-pub struct Brick {
+pub struct BrickView {
     pub dots: [Dot; 4],
 }
 
 #[derive(Copy, Clone, Resource)]
-pub struct BrickShape(pub usize, pub usize);
+pub struct Brick {
+    pub ty: usize,
+    pub rotation: usize,
+}
 
-impl From<BrickShape> for Brick{
-    fn from(bs:BrickShape)->Brick{
-        BRICKS_DICT[bs.0][bs.1]
+impl From<Brick> for BrickView {
+    fn from(bs: Brick) -> BrickView {
+        BRICK_VIEWS[bs.ty][bs.rotation]
     }
 }
 
-impl BrickShape {
+impl Brick {
     pub fn rand() -> Self {
-        let index = rand::thread_rng().gen_range(0..BRICKS_TYPES);
-        Self(index, 0)
+        let ty = rand::thread_rng().gen_range(0..BRICKS_TYPES);
+        Self { ty, rotation: 0 }
     }
     pub fn rotate(&self) -> Self {
-        Self(self.0, (self.1 + 1) % BRICKS_DICT[self.0].len())
+        Self {
+            ty: self.ty,
+            rotation: (self.rotation + 1) % BRICK_VIEWS[self.ty].len(),
+        }
     }
 }
 
@@ -62,7 +68,7 @@ impl Default for Board {
 }
 impl Board {
     fn index(dot: &Dot) -> usize {
-        (dot.0 as usize + dot.1 as usize * BOARD_X as usize) as usize
+        dot.0 as usize + dot.1 as usize * BOARD_X as usize
     }
     pub fn occupy_dot(&mut self, dot: &Dot) -> &mut Self {
         let i = Self::index(dot);
@@ -71,15 +77,15 @@ impl Board {
         }
         self
     }
-    pub fn occupy_brick(&mut self, brick: &Brick, orig: &Dot) {
+    pub fn occupy_brick_view(&mut self, brick: &BrickView, pos: &Dot) {
         for i in 0..4 {
-            self.occupy_dot(&brick.dots[i].with_orignal_dot(orig));
+            self.occupy_dot(&brick.dots[i].with_original_dot(pos));
         }
     }
 
-    pub fn occupy_brickshape(&mut self, brick_shape: &BrickShape, orig: &Dot) {
-        let brick = Brick::from(*brick_shape);
-        self.occupy_brick(&brick,orig)
+    pub fn occupy_brick(&mut self, brick: &Brick, pos: &Dot) {
+        let brick = BrickView::from(*brick);
+        self.occupy_brick_view(&brick, pos)
     }
 
     pub fn occupied_dot(&self, dot: &Dot) -> bool {
@@ -90,28 +96,28 @@ impl Board {
             false
         }
     }
-    pub fn conflict_brick(&self, brick: &Brick, orig: &Dot) -> bool {
-        self.occupied_dot(&brick.dots[0].with_orignal_dot(orig))
-            || self.occupied_dot(&brick.dots[1].with_orignal_dot(orig))
-            || self.occupied_dot(&brick.dots[2].with_orignal_dot(orig))
-            || self.occupied_dot(&brick.dots[3].with_orignal_dot(orig))
+    pub fn conflict_brick(&self, brick: &BrickView, pos: &Dot) -> bool {
+        self.occupied_dot(&brick.dots[0].with_original_dot(pos))
+            || self.occupied_dot(&brick.dots[1].with_original_dot(pos))
+            || self.occupied_dot(&brick.dots[2].with_original_dot(pos))
+            || self.occupied_dot(&brick.dots[3].with_original_dot(pos))
     }
     fn dot_in_board(dot: &Dot) -> bool {
         //0 <= dot.0 && dot.0 < BOARD_X && 0 <= dot.1 && dot.1 < BOARD_Y
         //BUG: should we compare Y ?
         0 <= dot.0 && dot.0 < BOARD_X && 0 <= dot.1
     }
-    fn brick_in_board(brick: &Brick, orig: &Dot) -> bool {
-        Self::dot_in_board(&brick.dots[0].with_orignal_dot(orig))
-            && Self::dot_in_board(&brick.dots[1].with_orignal_dot(orig))
-            && Self::dot_in_board(&brick.dots[2].with_orignal_dot(orig))
-            && Self::dot_in_board(&brick.dots[3].with_orignal_dot(orig))
+    fn brick_in_board(brick: &BrickView, pos: &Dot) -> bool {
+        Self::dot_in_board(&brick.dots[0].with_original_dot(pos))
+            && Self::dot_in_board(&brick.dots[1].with_original_dot(pos))
+            && Self::dot_in_board(&brick.dots[2].with_original_dot(pos))
+            && Self::dot_in_board(&brick.dots[3].with_original_dot(pos))
     }
-    pub fn valid_brick(&self, brick: &Brick, orig: &Dot) -> bool {
-        Self::brick_in_board(brick, orig) && !self.conflict_brick(brick, orig)
+    pub fn valid_brick_view(&self, brick: &BrickView, pos: &Dot) -> bool {
+        Self::brick_in_board(brick, pos) && !self.conflict_brick(brick, pos)
     }
-    pub fn valid_brickshape(&self, brick_shape: &BrickShape, orig: &Dot) -> bool {
-        self.valid_brick(&(*brick_shape).into(), orig)
+    pub fn valid_brick(&self, brick: &Brick, pos: &Dot) -> bool {
+        self.valid_brick_view(&(*brick).into(), pos)
     }
     pub fn clear(&mut self) {
         for i in 0..BOARD_X_Y {
@@ -120,14 +126,14 @@ impl Board {
     }
     pub fn can_clean_line(&self, y: i8) -> bool {
         assert!(0 <= y);
-        assert!(y < BOARD_Y_VALIDE);
+        assert!(y < BOARD_Y_VALID);
         self.0[Self::index(&Dot(0, y))..Self::index(&Dot(0, y + 1))]
             .iter()
             .all(|x| *x)
     }
     pub fn get_clean_lines(&self) -> Vec<i8> {
         let mut vec = Vec::with_capacity(4);
-        for i in (0..BOARD_Y_VALIDE).rev() {
+        for i in (0..BOARD_Y_VALID).rev() {
             if self.can_clean_line(i) {
                 vec.push(i);
             }
@@ -145,7 +151,7 @@ impl Board {
 
     pub fn clean_line(&mut self, y: i8) {
         assert!(0 <= y);
-        assert!(y < BOARD_Y_VALIDE);
+        assert!(y < BOARD_Y_VALID);
 
         let dst_below = Self::index(&Dot(0, y));
         let src_below = Self::index(&Dot(0, y + 1));
