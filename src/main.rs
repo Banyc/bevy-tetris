@@ -130,6 +130,18 @@ fn keyboard_system(
         }
     }
 
+    // Speed up the falling timer when the down key is pressed
+    if keyboard_input.just_pressed(KeyCode::Down) {
+        let level = game.level;
+        game.falling_timer
+            .set_duration(Duration::from_secs_f32(get_speed(level) / 10.));
+    }
+    if keyboard_input.just_released(KeyCode::Down) {
+        let level = game.level;
+        game.falling_timer
+            .set_duration(Duration::from_secs_f32(get_speed(level)));
+    }
+
     let just_pressed = keyboard_input.any_just_pressed(vec![KeyCode::Left, KeyCode::Right]);
     if just_pressed {
         game.keyboard_timer.reset();
